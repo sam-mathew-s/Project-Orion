@@ -1,0 +1,8 @@
+streamlit
+supabase
+groq
+plotly
+pandas
+python-dotenv
+psycopg2-binary
+faker
