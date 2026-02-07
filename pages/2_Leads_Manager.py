@@ -1,3 +1,4 @@
+from src.knowledge import load_knowledge_base
 import streamlit as st
 import pandas as pd
 from src.database import fetch_all_leads, supabase
@@ -49,55 +50,109 @@ st.subheader("🤖 AI Agent Actions")
 # Safety Check
 if not df_leads.empty and "name" in df_leads.columns:
     
-    # Select Target
+    # 1. SELECT TARGET (Common for all tools)
     lead_names = df_leads['name'].tolist()
     selected_lead = st.selectbox("Select Target", lead_names)
-
-    # Get Data to target
+    
+    # 2. GET DATA & CONTEXT
     target_data = df_leads[df_leads['name'] == selected_lead].iloc[0]
-    target_id = target_data['id'] 
+    target_id = target_data['id']
+    my_context = load_knowledge_base() # Load your bio from the text file
 
-    # check if already have a saved email in the Database
-    existing_email = target_data.get('cold_email')
+    # 3. CREATE THE TABS
+    tab1, tab2 = st.tabs(["📧 Email Generator", "🧠 AI Lead Scorer"])
 
-    col1, col2 = st.columns(2)
+    # ==========================
+    # TAB 1: THE EMAIL GENERATOR
+    # ==========================
+    with tab1:
+        st.markdown("#### Cold Email Drafter")
+        
+        # Check for existing saved email
+        existing_email = target_data.get('cold_email')
 
-    # BUTTON: GENERATE NEW EMAIL
-    if col1.button("Generate Cold Email"):
-
-        # Hardcoded Name Logic
-        my_name = "Sam"
-
-        prompt = f"""
-        Write a sales email to {target_data['name']} at {target_data['company']}.
-        FROM: {my_name} (Orion AI Architect).
-        GOAL: Schedule a demo.
-
-        STRICT OUTPUT RULES:
-        1. Write ONLY the email body.
-        2. Do NOT write "Here is the email" "Subject:"
-        3. Start directly with "Dear {target_data['name']},".
-"""
-        with st.spinner("AI is writing to the Database..."):
-            from agents.llm_engine import get_ai_response 
+        if st.button("Generate Cold Email", key="btn_email_gen"):
             
-            # Get text from AI
-            ai_response = get_ai_response(prompt)
+            # The Prompt (Using your 'my_info.txt' context)
+            prompt = f"""
+            You are an AI Assistant writing an email on behalf of:
+            {my_context}
+            
+            TARGET LEAD:
+            Name: {target_data['name']}
+            Company: {target_data['company']}
+            Source: {target_data['source']}
+            
+            TASK:
+            Write a cold email to the Target Lead.
+            
+            STRICT RULES:
+            1. Use the context to mention my skills (Python, Streamlit) and location (Chennai).
+            2. Keep it under 150 words.
+            3. Do NOT mention "creating files" or errors.
+            4. SIGN OFF EXACTLY AS: "Best regards, Sam".
+            5. Output ONLY the email body.
+            """
+            
+            with st.spinner("Consulting Knowledge Base..."):
+                from agents.llm_engine import get_ai_response
+                ai_response = get_ai_response(prompt)
+                
+                # Save to Database (Immortality)
+                supabase.table("leads").update({"cold_email": ai_response}).eq("id", target_id).execute()
+                st.success("Draft Saved to Database!")
+                st.rerun()
 
-            # Save to supabse
-            supabase.table("leads").update({"cold_email": ai_response}).eq("id", target_id).execute()
+        # Display Saved Email
+        if existing_email:
+            st.text_area("Current Draft:", value=existing_email, height=300)
+            if st.button("🗑️ Clear Draft", key="btn_clear"):
+                supabase.table("leads").update({"cold_email": None}).eq("id", target_id).execute()
+                st.rerun()
 
-            st.success("Email Generated & Saved to Database!")
-            st.rerun() # Refresh to show the new data
+    # ==========================
+    # TAB 2: THE LEAD SCORER (NEW!)
+    # ==========================
+    with tab2:
+        st.markdown("#### 🎯 Lead Qualification Engine")
+        st.info("This tool analyzes if the company matches your Python/AI skills.")
+        
+        if st.button("Analyze Lead Potential", key="btn_analyze"):
+            
+            score_prompt = f"""
+            Act as a Career Strategy Expert.
+            
+            MY PROFILE:
+            {my_context}
+            
+            TARGET LEAD:
+            Name: {target_data['name']}
+            Company: {target_data['company']}
+            Source: {target_data['source']}
+            
+            TASK:
+            Analyze if this lead is a good match for my services.
+            1. Assign a Match Score (0-100). Be strict. Deduct points if the company is not Tech Company.
+            2. Explain WHY in 1 sentence.
+            3. Suggest a specific Technical Angle (e.g., "Pitch an Automation Bot").
+            
+            OUTPUT FORMAT:
+            Score: [Number]/100
+            Reason: [Text]
+            Strategy: [Text]
+            """
+            
+            with st.spinner("Analyzing Market Fit..."):
+                from agents.llm_engine import get_ai_response
+                analysis = get_ai_response(score_prompt)
+                
+                # We use session_state for this one (Temporary View)
+                st.session_state[f"analysis_{selected_lead}"] = analysis
 
-    if existing_email:
-        st.markdown("### 📝 Saved Draft")
-        st.text_area("Content", value=existing_email, height=300)
+        # Show the Analysis if it exists in memory
+        if f"analysis_{selected_lead}" in st.session_state:
+            st.success("Analysis Complete")
+            st.write(st.session_state[f"analysis_{selected_lead}"])
 
-        #CLEAR BUTTON
-        if col2.button("Clear Saved Data"):
-            supabase.table("leads").update({"cold_email": None}).eq("id", target_id).execute
-            st.rerun()
-        else:
-            st.info("No email saved yet. Click Generate.")
-
+else:
+    st.warning("⚠️ No leads found. Add a lead above to unlock AI tools.")

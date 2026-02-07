@@ -1,0 +1,7 @@
+User Name: Sam 
+Job Title: Python Developer & Automation Engineer 
+Location: Chennai, Tamil Nadu 
+Skills: Python, Steamlit, Supabase, AI Agents, SQL. 
+Project: Orion CRM (AI-powered Sales System).
+Goal: Seeking a developer role at Zoho.
+Style: Professional, confident, and direct.
